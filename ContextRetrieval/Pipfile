@@ -16,6 +16,7 @@ langchain-core = "*"
 rogue = "*"
 sentence-transformers = "*"
 langchain-groq = "*"
+langchain-openai = "*"
 
 [dev-packages]
 ipykernel = "*"
