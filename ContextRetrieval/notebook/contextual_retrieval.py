@@ -25,15 +25,15 @@ Original file is located at
 
 """
 
-!pip install sentence_transformers -qU
-!pip install rank_bm25 -qU
-!pip install datasets -qU
-!pip install pinecone -qU
-!pip install langchain -qU
-!pip install langchain_core -qU
-!pip install langchain_groq -qU
-!pip install langchain-google-genai -qU
-!pip install langchain-openai -qU
+# !pip install sentence_transformers -qU
+# !pip install rank_bm25 -qU
+# !pip install datasets -qU
+# !pip install pinecone -qU
+# !pip install langchain -qU
+# !pip install langchain_core -qU
+# !pip install langchain_groq -qU
+# !pip install langchain-google-genai -qU
+# !pip install langchain-openai -qU
 
 
 
@@ -84,12 +84,12 @@ print(documents)
 ## **sentence-transformers**
 """
 
-load ' sentence-transformers/all-MiniLM-L6-v2' embedding model from Hugging Face
-from transformers import AutoTokenizer, AutoModel
-model_name = 'sentence-transformers/all-MiniLM-L6-v2'
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-max_seq_length = tokenizer.model_max_length
-embedding_model = AutoModel.from_pretrained(model_name)
+# load ' sentence-transformers/all-MiniLM-L6-v2' embedding model from Hugging Face
+# from transformers import AutoTokenizer, AutoModel
+# model_name = 'sentence-transformers/all-MiniLM-L6-v2'
+# tokenizer = AutoTokenizer.from_pretrained(model_name)
+# max_seq_length = tokenizer.model_max_length
+# embedding_model = AutoModel.from_pretrained(model_name)
 
 """## **openai**"""
 
@@ -617,7 +617,7 @@ def fusion_rank_search(
     bm25_results = [
         {
             'id': str(i),
-            'score': bm25_scores_norm[i],
+            'score': bm25_scores_norm[i],ProcessedDocument
             'metadata': {'text': chunks[i]}
         }
         for i in bm25_top_indices
