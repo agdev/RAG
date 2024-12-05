@@ -31,14 +31,15 @@ Original file is located at
 !pip install langchain -qU
 !pip install langchain_core -qU
 !pip install langchain_groq -qU
-!pip install langchain_google-genai -qU
-!pip install langchain_openai -qU
+!pip install langchain-google-genai -qU
+!pip install langchain-openai -qU
 !pip install rouge-score  -qU
 
 
 
 """# Importing libraries"""
 
+import numpy as np
 import nltk
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sentence_transformers import SentenceTransformer
@@ -54,7 +55,11 @@ import pandas as pd # for dataframe
 import getpass
 from google.colab import userdata
 import os
-import numpy as np
+
+from langchain_core.prompts import ChatPromptTemplate
+
+# nltk.download('punkt')
+nltk.download('punkt_tab')
 
 """# Loading dataset"""
 
@@ -227,8 +232,6 @@ model_chat_name = "gpt-3.5-turbo"
 llm = ChatOpenAI(model=model_chat_name)
 sum_provider = 'OPENAI'
 
-from langchain_core.prompts import ChatPromptTemplate
-
 prompt_template = ChatPromptTemplate.from_messages([
     ("system",
             """You are an AI assistant specializing in document summarization and contextualization. Your task is to provide brief, relevant context for a specific chunk of text based on a larger document. Here's how to proceed:
@@ -346,9 +349,6 @@ generate_context(docs_processed)
 # sum_provider = 'GROQ'
 
 """### **GOOGLE**"""
-
-# from langchain_google_genai import GoogleGenerativeAI
-
 
 # MODEL_GEMINI_CHAT = "gemini-1.5-flash"
 
@@ -733,7 +733,8 @@ def get_reranker_score(pairs):
     with torch.no_grad():
         inputs = tokenizer(pairs, padding=True, truncation=True, return_tensors='pt', max_length=512)
         scores = model(**inputs, return_dict=True).logits.view(-1, ).float()
-        print(scores)
+        print(f'reranker scores {scores}')
+        return scores
 
 """### **FlagEmbedding**"""
 
@@ -763,40 +764,40 @@ def fusion_rank_search(
     chunks: list[str],
     model,
     embedding_index,
+    weight_sparse: float,
     k: int = 5,
-    weight_sparse: float = 0.5,
     reranker_cutoff: int = 20  # Number of top results to rerank
 ):
     # Get BM25 results
     tokenized_query = nltk.word_tokenize(query)
     bm25_scores = np.array(bm25.get_scores(tokenized_query))  # Already numpy array
     bm25_top_indices = np.argsort(bm25_scores)[::-1][:reranker_cutoff]
-    
+
     # Get dense results using OpenAI embeddings
     query_embedding = model.embed_query(query)
-    
+
     # Query Pinecone index
     dense_results = embedding_index.query(
         vector=query_embedding,
         top_k=reranker_cutoff,
         include_values=True
     )
-    
+
     # Extract scores and indices from Pinecone results and convert to numpy arrays
     dense_scores = np.array([match['score'] for match in dense_results['matches']])
     dense_indices = np.array([int(match['id']) for match in dense_results['matches']])
-    
+
     # Normalize scores (now all operations use numpy)
     bm25_scores_norm = (bm25_scores[bm25_top_indices] - np.min(bm25_scores)) / (np.max(bm25_scores) - np.min(bm25_scores))
     dense_scores_norm = (dense_scores - np.min(dense_scores)) / (np.max(dense_scores) - np.min(dense_scores))
-    
+
     # Create combined results
     combined_results = {}
-    
+
     # Add BM25 results
     for idx, score in zip(bm25_top_indices, bm25_scores_norm):
         combined_results[idx] = {'score': weight_sparse * score, 'count': 1}
-        
+
     # Add dense results
     for idx, score in zip(dense_indices, dense_scores_norm):
         if idx in combined_results:
@@ -804,14 +805,14 @@ def fusion_rank_search(
             combined_results[idx]['count'] += 1
         else:
             combined_results[idx] = {'score': (1 - weight_sparse) * score, 'count': 1}
-    
+
     # Calculate final scores
     for idx in combined_results:
         combined_results[idx]['final_score'] = combined_results[idx]['score'] / combined_results[idx]['count']
-    
+
     # Sort by final score
     sorted_results = sorted(combined_results.items(), key=lambda x: x[1]['final_score'], reverse=True)
-    
+
     # Return top k results with their chunks
     final_results = []
     for idx, scores in sorted_results[:k]:
@@ -820,80 +821,8 @@ def fusion_rank_search(
             'score': scores['final_score'],
             'metadata': {'text': chunks[idx]}
         })
-    
+
     return final_results
-
-def compare_rag_evaluations(best_answers_df: pd.DataFrame, 
-                          set1_params: dict, 
-                          set2_params: dict,
-                          llm_chain,
-                          n_samples: int = None) -> pd.DataFrame:
-    """
-    Compare RAG evaluation results between two parameter sets.
-    
-    Args:
-        best_answers_df: DataFrame with questions and answers
-        set1_params: Dictionary with parameters for first evaluation
-        set2_params: Dictionary with parameters for second evaluation
-        llm_chain: The LLM chain to use for evaluation
-        n_samples: Optional number of samples to evaluate
-    
-    Returns:
-        DataFrame with comparison results
-    """
-    # Run evaluations for both sets
-    results1_df, avg_scores1 = evaluate_rag_system(
-        best_answers_df=best_answers_df,
-        bm25=set1_params['bm25'],
-        chunks=set1_params['chunks'],
-        embedding_model=set1_params.get('embedding_model'),
-        embedding_index=set1_params['embedding_index'],
-        llm_chain=llm_chain,
-        n_samples=n_samples
-    )
-    
-    results2_df, avg_scores2 = evaluate_rag_system(
-        best_answers_df=best_answers_df,
-        bm25=set2_params['bm25'],
-        chunks=set2_params['chunks'],
-        embedding_model=set2_params.get('embedding_model'),
-        embedding_index=set2_params['embedding_index'],
-        llm_chain=llm_chain,
-        n_samples=n_samples
-    )
-    
-    # Create comparison DataFrame
-    comparison = pd.DataFrame({
-        'Metric': ['BLEU', 'ROUGE-1', 'ROUGE-2', 'ROUGE-L'],
-        'Contextual': [
-            avg_scores1['Average BLEU'],
-            avg_scores1['Average ROUGE-1'],
-            avg_scores1['Average ROUGE-2'],
-            avg_scores1['Average ROUGE-L']
-        ],
-        'Regular': [
-            avg_scores2['Average BLEU'],
-            avg_scores2['Average ROUGE-1'],
-            avg_scores2['Average ROUGE-2'],
-            avg_scores2['Average ROUGE-L']
-        ]
-    })
-    
-    # Calculate differences
-    comparison['Difference'] = comparison['Contextual'] - comparison['Regular']
-
-        # Calculate differences
-    comparison['Difference'] = comparison['Contextual'] - comparison['Regular']
-    
-    # Calculate percentage difference
-    # Formula: ((new - old) / old) * 100
-    comparison['Difference %'] = ((comparison['Contextual'] - comparison['Regular']) / comparison['Regular'] * 100).round(2)
-    
-    # Format numbers to 4 decimal places
-    for col in ['Contextual', 'Regular', 'Difference', 'Difference %']:
-        comparison[col] = comparison[col].round(4)
-    
-    return comparison
 
 from nltk.translate.bleu_score import sentence_bleu
 from rouge_score import rouge_scorer
@@ -904,9 +833,10 @@ def evaluate_rag_system(
     best_answers_df: pd.DataFrame,
     bm25,
     chunks: list[str],
-    model,
+    embedding_model,
     embedding_index,
     llm_chain,
+    weight_sparse: float,
     n_samples: int = None,  # Optional: limit number of samples for testing
     reranker_cutoff: int = 20
 ):
@@ -930,10 +860,10 @@ def evaluate_rag_system(
                 query=query,
                 bm25=bm25,
                 chunks=chunks,
-                model=model,
+                model=embedding_model,
                 embedding_index=embedding_index,
                 k=5,
-                weight_sparse=0.5,
+                weight_sparse=0.1,
                 reranker_cutoff=reranker_cutoff
             )
 
@@ -958,7 +888,7 @@ def evaluate_rag_system(
             # Generate answer using LLM
             llm_response = llm_chain.invoke({
                 "context": context,
-                "question": query
+                "query": query
             })
             generated_answer = llm_response.content if hasattr(llm_response, 'content') else llm_response
 
@@ -1001,7 +931,6 @@ def evaluate_rag_system(
 
     return results_df, avg_scores
 
-# Example usage:
 def print_evaluation_results(results_df, avg_scores):
     print("\nAverage Scores:")
     for metric, score in avg_scores.items():
@@ -1021,9 +950,126 @@ def print_evaluation_results(results_df, avg_scores):
             print(f"Score: {score:.4f}")
             print(f"Context: {context[:200]}...")
 
+def compare_rag_evaluations(best_answers_df: pd.DataFrame,
+                          set1_params: dict,
+                          set2_params: dict,
+                          llm_chain,
+                          weight_sparse: float,
+                          n_samples: int = None) -> pd.DataFrame:
+    """
+    Compare RAG evaluation results between two parameter sets.
+
+    Args:
+        best_answers_df: DataFrame with questions and answers
+        set1_params: Dictionary with parameters for first evaluation
+        set2_params: Dictionary with parameters for second evaluation
+        llm_chain: The LLM chain to use for evaluation
+        n_samples: Optional number of samples to evaluate
+
+    Returns:
+        DataFrame with comparison results
+    """
+    # Run evaluations for both sets
+    results1_df, avg_scores1 = evaluate_rag_system(
+        best_answers_df=best_answers_df,
+        weight_sparse=weight_sparse,
+        bm25=set1_params['bm25'],
+        chunks=set1_params['chunks'],
+        embedding_model=set1_params['embedding_model'],
+        embedding_index=set1_params['embedding_index'],
+        llm_chain=llm_chain,
+        n_samples=n_samples
+    )
+
+    print_evaluation_results(results1_df, avg_scores1)
+
+    results2_df, avg_scores2 = evaluate_rag_system(
+        best_answers_df=best_answers_df,
+        weight_sparse=weight_sparse,
+        bm25=set2_params['bm25'],
+        chunks=set2_params['chunks'],
+        embedding_model=set2_params['embedding_model'],
+        embedding_index=set2_params['embedding_index'],
+        llm_chain=llm_chain,
+        n_samples=n_samples
+    )
+
+    print_evaluation_results(results2_df, avg_scores2)
+    # Create comparison DataFrame
+    comparison = pd.DataFrame({
+        'Metric': ['BLEU', 'ROUGE-1', 'ROUGE-2', 'ROUGE-L'],
+        'Contextual': [
+            avg_scores1['Average BLEU'],
+            avg_scores1['Average ROUGE-1'],
+            avg_scores1['Average ROUGE-2'],
+            avg_scores1['Average ROUGE-L']
+        ],
+        'Regular': [
+            avg_scores2['Average BLEU'],
+            avg_scores2['Average ROUGE-1'],
+            avg_scores2['Average ROUGE-2'],
+            avg_scores2['Average ROUGE-L']
+        ]
+    })
+
+    # Calculate differences
+    comparison['Difference'] = comparison['Contextual'] - comparison['Regular']
+
+        # Calculate differences
+    comparison['Difference'] = comparison['Contextual'] - comparison['Regular']
+
+    # Calculate percentage difference
+    # Formula: ((new - old) / old) * 100
+    comparison['Difference %'] = ((comparison['Contextual'] - comparison['Regular']) / comparison['Regular'] * 100).round(2)
+
+    # Format numbers to 4 decimal places
+    for col in ['Contextual', 'Regular', 'Difference', 'Difference %']:
+        comparison[col] = comparison[col].round(4)
+
+    return comparison
+
+prompt_template_answer = ChatPromptTemplate.from_messages([
+    ("system",
+            """You are an AI assistant specialized in answering user queries based solely on provided context. Your primary goal is to provide clear, concise, and relevant answers without adding, making up, or hallucinating any information.
+            """
+     ),
+    ("human","""Now, consider the following context carefully:
+      <context>
+      {context}
+      </context>
+
+      Here is the user's query:
+      <query>
+      {query}
+      </query>
+
+      Before answering, please follow these steps:
+
+      1. Analyze the user's query and the provided context:
+        a. Identify the key elements of the user's query.
+        b. Find and quote relevant information from the context.
+        c. Explicitly link the quoted information to the query elements.
+        d. Formulate a potential answer based only on the context.
+        e. Explicitly check that your answer doesn't include any information not present in the context.
+        f. If the context doesn't contain enough information to answer the query, note this.
+
+      2. After your analysis process, provide your final answer or response.
+
+      If the context does not contain enough information to answer the user's query confidently and accurately, your final response should be: "I do not have enough information to answer this question based on the provided context."
+
+      Remember, it's crucial that your answer is based entirely on the given context. Do not add any external information or make assumptions beyond what is explicitly stated in the context.
+
+    """)
+])
+
+from langchain_core.output_parsers import StrOutputParser
+
+def create_answer_chain(llm):
+  return prompt_template_answer | llm | StrOutputParser()
 
 embedding_index_contextual= pc.Index(EMBEDDING_INDEX_CONTEXTUAL)
 embedding_index_regular= pc.Index(EMBEDDING_INDEX_REGULAR)
+answer_chain = create_answer_chain(llm)
 
 # Prepare parameter sets
 set1_params = {
@@ -1043,25 +1089,12 @@ set2_params = {
 # Run comparison
 comparison_results = compare_rag_evaluations(
     best_answers_df=best_answers_df,
+    weight_sparse=0.3,
     set1_params=set1_params,
     set2_params=set2_params,
-    llm_chain=context_chain,
-    n_samples=None  # Set to a number if you want to limit samples
+    llm_chain=answer_chain,
+    n_samples=1  # Set to a number if you want to limit samples
 )
 
 # Display results as markdown table
 print(comparison_results.to_markdown(index=False))
-# # Run evaluation
-# results_df, avg_scores = evaluate_rag_system(
-#     best_answers_df=best_answers_df,
-#     bm25=bm25_contextual,
-#     chunks=chunks_with_context,
-#     model=embedding_model,
-#     embedding_index=embedding_index_contextual,
-#     llm_chain=llm_chain,
-#     reranker_cutoff=20,
-#     # n_samples=10  # Optional: start with a small sample for testing
-# )
-
-# # Print results
-# print_evaluation_results(results_df, avg_scores) 
