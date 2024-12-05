@@ -1053,7 +1053,7 @@ prompt_template_answer = ChatPromptTemplate.from_messages([
         e. Explicitly check that your answer doesn't include any information not present in the context.
         f. If the context doesn't contain enough information to answer the query, note this.
 
-      2. After your analysis process, provide your final answer or response.
+      2. After your analysis process, provide your final answer or response. Do not include your analysis steps in your final answer or response, only the result.
 
       If the context does not contain enough information to answer the user's query confidently and accurately, your final response should be: "I do not have enough information to answer this question based on the provided context."
 
@@ -1089,7 +1089,7 @@ set2_params = {
 # Run comparison
 comparison_results = compare_rag_evaluations(
     best_answers_df=best_answers_df,
-    weight_sparse=0.3,
+    weight_sparse=0.2,
     set1_params=set1_params,
     set2_params=set2_params,
     llm_chain=answer_chain,
