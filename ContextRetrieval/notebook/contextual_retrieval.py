@@ -34,12 +34,14 @@ Original file is located at
 !pip install langchain-google-genai -qU
 !pip install langchain-openai -qU
 !pip install rouge-score  -qU
-
-
+!pip install bert-score  -qU
+import pandas as pd
+import numpy as np
+import torch
+import bert_score
 
 """# Importing libraries"""
 
-import numpy as np
 import nltk
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sentence_transformers import SentenceTransformer
@@ -51,7 +53,6 @@ from datasets import load_dataset
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import pinecone
-import pandas as pd # for dataframe
 import getpass
 from google.colab import userdata
 import os
@@ -840,14 +841,18 @@ def evaluate_rag_system(
     n_samples: int = None,  # Optional: limit number of samples for testing
     reranker_cutoff: int = 20
 ):
-    # Initialize ROUGE scorer
-    rouge_scorer_instance = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+    # Import bert_score
+    import bert_score
 
     # Initialize results storage
     results = []
 
     # Get subset of dataframe if n_samples is specified
     eval_df = best_answers_df.head(n_samples) if n_samples else best_answers_df
+    
+    # Lists to store all references and candidates for batch BERTScore computation
+    all_references = []
+    all_candidates = []
 
     # Iterate through questions and answers
     for idx, row in tqdm(eval_df.iterrows(), total=len(eval_df), desc="Evaluating Questions"):
@@ -892,23 +897,15 @@ def evaluate_rag_system(
             })
             generated_answer = llm_response.content if hasattr(llm_response, 'content') else llm_response
 
-            # Calculate BLEU score
-            reference_tokens = [reference_answer.split()]
-            candidate_tokens = generated_answer.split()
-            bleu_score = sentence_bleu(reference_tokens, candidate_tokens)
+            # Store answers for batch BERTScore computation
+            all_references.append(reference_answer)
+            all_candidates.append(generated_answer)
 
-            # Calculate ROUGE scores
-            rouge_scores = rouge_scorer_instance.score(reference_answer, generated_answer)
-
-            # Store results
+            # Store intermediate results
             result = {
                 'question': query,
                 'reference_answer': reference_answer,
                 'generated_answer': generated_answer,
-                'bleu_score': bleu_score,
-                'rouge1_f1': rouge_scores['rouge1'].fmeasure,
-                'rouge2_f1': rouge_scores['rouge2'].fmeasure,
-                'rougeL_f1': rouge_scores['rougeL'].fmeasure,
                 'retrieved_contexts': [res['metadata']['text'] for res in retrieved_results],
                 'context_scores': [res['score'] for res in retrieved_results]
             }
@@ -918,15 +915,31 @@ def evaluate_rag_system(
             print(f"Error processing question {idx}: {str(e)}")
             continue
 
+    # Calculate BERTScore for all pairs at once
+    P, R, F1 = bert_score.score(
+        all_candidates, 
+        all_references,
+        lang="en",
+        verbose=True,
+        device='cuda' if torch.cuda.is_available() else 'cpu'
+    )
+
+    # Add BERTScore metrics to results
+    for idx, (p, r, f1) in enumerate(zip(P, R, F1)):
+        results[idx].update({
+            'bertscore_precision': p.item(),
+            'bertscore_recall': r.item(),
+            'bertscore_f1': f1.item()
+        })
+
     # Convert results to DataFrame
     results_df = pd.DataFrame(results)
 
     # Calculate and print average scores
     avg_scores = {
-        'Average BLEU': results_df['bleu_score'].mean(),
-        'Average ROUGE-1': results_df['rouge1_f1'].mean(),
-        'Average ROUGE-2': results_df['rouge2_f1'].mean(),
-        'Average ROUGE-L': results_df['rouge2_f1'].mean()
+        'Average BERTScore Precision': results_df['bertscore_precision'].mean(),
+        'Average BERTScore Recall': results_df['bertscore_recall'].mean(),
+        'Average BERTScore F1': results_df['bertscore_f1'].mean()
     }
 
     return results_df, avg_scores
@@ -941,10 +954,9 @@ def print_evaluation_results(results_df, avg_scores):
         print("\nQuestion:", row['question'])
         print("Reference Answer:", row['reference_answer'])
         print("Generated Answer:", row['generated_answer'])
-        print(f"BLEU Score: {row['bleu_score']:.4f}")
-        print(f"ROUGE-1 F1: {row['rouge1_f1']:.4f}")
-        print(f"ROUGE-2 F1: {row['rouge2_f1']:.4f}")
-        print(f"ROUGE-L F1: {row['rougeL_f1']:.4f}")
+        print(f"BERTScore Precision: {row['bertscore_precision']:.4f}")
+        print(f"BERTScore Recall: {row['bertscore_recall']:.4f}")
+        print(f"BERTScore F1: {row['bertscore_f1']:.4f}")
         print("\nRetrieved Contexts:")
         for context, score in zip(row['retrieved_contexts'], row['context_scores']):
             print(f"Score: {score:.4f}")
@@ -997,18 +1009,16 @@ def compare_rag_evaluations(best_answers_df: pd.DataFrame,
     print_evaluation_results(results2_df, avg_scores2)
     # Create comparison DataFrame
     comparison = pd.DataFrame({
-        'Metric': ['BLEU', 'ROUGE-1', 'ROUGE-2', 'ROUGE-L'],
+        'Metric': ['BERTScore Precision', 'BERTScore Recall', 'BERTScore F1'],
         'Contextual': [
-            avg_scores1['Average BLEU'],
-            avg_scores1['Average ROUGE-1'],
-            avg_scores1['Average ROUGE-2'],
-            avg_scores1['Average ROUGE-L']
+            avg_scores1['Average BERTScore Precision'],
+            avg_scores1['Average BERTScore Recall'],
+            avg_scores1['Average BERTScore F1']
         ],
         'Regular': [
-            avg_scores2['Average BLEU'],
-            avg_scores2['Average ROUGE-1'],
-            avg_scores2['Average ROUGE-2'],
-            avg_scores2['Average ROUGE-L']
+            avg_scores2['Average BERTScore Precision'],
+            avg_scores2['Average BERTScore Recall'],
+            avg_scores2['Average BERTScore F1']
         ]
     })
 
