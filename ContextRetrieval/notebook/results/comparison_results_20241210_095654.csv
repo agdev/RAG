@@ -1,0 +1,4 @@
+Metric,Contextual,Regular,Difference,Difference %
+BERTScore Precision,0.8333,0.8332,0.0001,0.01
+BERTScore Recall,0.8992,0.8977,0.0015,0.17
+BERTScore F1,0.8647,0.864,0.0007,0.08
