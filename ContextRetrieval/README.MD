@@ -69,6 +69,8 @@ The fusion_rank_search function combines multiple retrieval approaches:
 
 ## Evaluation
 Using BERTScore metrics to compare the effectiveness of regular vs. contextualized retrieval approaches.
+You can see averaged results [here](/notebook/results/comparison_results_20241210_095654.csv) .
+All results [here](/notebook/results/)
 
 # Benefits of This Approach
 1. Improved Retrieval Quality: By combining semantic and keyword-based search, the system can capture both conceptual similarity and exact keyword matches.
