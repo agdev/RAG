@@ -10,19 +10,18 @@ Original file is located at
 
 This code implements Contextual RAG System that combines vector-based similarity search with keyword-based BM25 retrieval. The approach aims to leverage the strengths of both methods to improve the overall quality and relevance of document retrieval.
 
-#Motivation
-Traditional retrieval methods often rely on either semantic understanding (vector-based) or keyword matching (BM25). Each approach has its strengths and weaknesses. Fusion retrieval aims to combine these methods to create a more robust and accurate retrieval system that can handle a wider range of queries effectively. The aim of this notbook to compare Contextual Retrieval implementation with "simple/traditional" implemintation
+# Motivation
+
+Traditional retrieval methods often rely on either semantic understanding (vector-based) or keyword matching (BM25). Each approach has its strengths and weaknesses. Fusion retrieval aims to combine these methods to create a more robust and accurate retrieval system that can handle a wider range of queries effectively. The aim of this notebook is to compare Contextual Retrieval implementation with "traditional" implementation.
 
 # Key Components
- - "m-ric/huggingface_doc_qa_eval" Hugging face dataset
- - Pinecone Vector store for embedding storage
- - OpenAI embeddings
- - OpenAI summary model and generation model (Can be any other model)
- - BM25 index creation for keyword-based retrieval
- - Custom fusion retrieval function that combines both methods
 
-# Method Details
-Based on the code in the notebook/file, I can enhance the Method Details section to more accurately reflect the implementation:
+1. "m-ric/huggingface_doc_qa_eval" Hugging Face dataset
+2. Pinecone Vector store for embedding storage
+3. OpenAI embeddings
+4. OpenAI summary model and generation model (Can be any other model)
+5. BM25 index creation for keyword-based retrieval
+6. Custom fusion retrieval function that combines both methods
 
 # Method Details
 
@@ -75,9 +74,9 @@ The fusion_rank_search function combines multiple retrieval approaches:
 4. Returns the top-k (default 5) documents after reranking
 
 ## Evaluation
- Using BERTScore metrics to compare the effectiveness of regular vs. contextualized retrieval approaches.
+Using BERTScore metrics to compare the effectiveness of regular vs. contextualized retrieval approaches.
 
-# Benefits of this Approach
+# Benefits of This Approach
 1. Improved Retrieval Quality: By combining semantic and keyword-based search, the system can capture both conceptual similarity and exact keyword matches.
 2. Flexibility: The alpha parameter allows for adjusting the balance between vector and keyword search based on specific use cases or query types.
 3. Robustness: The combined approach can handle a wider range of queries effectively, mitigating weaknesses of individual methods.
@@ -85,7 +84,8 @@ The fusion_rank_search function combines multiple retrieval approaches:
 
 # Conclusion
 Fusion retrieval represents a powerful approach to document search that combines the strengths of semantic understanding and keyword matching. By leveraging both vector-based and BM25 retrieval methods, it offers a more comprehensive and flexible solution for information retrieval tasks. This approach has potential applications in various fields where both conceptual similarity and keyword relevance are important, such as academic research, legal document search, or general-purpose search engines.
-Averaged results show slightly better performance contextual retrivale vs. regular. There are several parameters that can be played with (chunking size, chunk ovelap, alpha for fusion score calculations) and have impact on final result.
+
+Averaged results show slightly better performance of contextual retrieval vs. regular. There are several parameters that can be played with (chunking size, chunk overlap, alpha for fusion score calculations) and have impact on final result.
 """
 
 # !pip install sentence_transformers -qU
