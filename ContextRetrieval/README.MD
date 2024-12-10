@@ -1,4 +1,4 @@
-![Contextual vs Regular Rag]("./context_vs_regular_rag.png")
+![Contextual vs Regular Rag]("context_vs_regular_rag.png")
 
 # Overview
 
